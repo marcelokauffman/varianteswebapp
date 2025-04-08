@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador de Variantes Genéticas (ACMG/Bayesiano)</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+         /* Estilo simple para el loader */
+        .loader {
+            border: 5px solid #e5e7eb; /* border-gray-200 */
+            border-top: 5px solid #4f46e5; /* indigo-600 */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 1.5rem auto; /* Centrado con margen */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Estilos para el markdown renderizado */
+        .markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 { margin-top: 1em; margin-bottom: 0.5em; font-weight: 600; }
+        .markdown-content h1 { font-size: 1.5em; }
+        .markdown-content h2 { font-size: 1.25em; }
+        .markdown-content h3 { font-size: 1.1em; }
+        .markdown-content ul { list-style-type: disc; margin-left: 1.5em; margin-bottom: 1em;}
+        .markdown-content li { margin-bottom: 0.25em; }
+        .markdown-content p { margin-bottom: 0.75em; line-height: 1.6; }
+        .markdown-content strong { font-weight: 600; }
+        .markdown-content code { background-color: #f3f4f6; padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace; font-size: 0.9em;}
+        .markdown-content pre { background-color: #f3f4f6; padding: 1em; border-radius: 5px; overflow-x: auto; margin-bottom: 1em;}
+        .markdown-content pre code { background-color: transparent; padding: 0; }
+        .markdown-content table { border-collapse: collapse; width: auto; margin-bottom: 1em; border: 1px solid #d1d5db; }
+        .markdown-content th, .markdown-content td { border: 1px solid #d1d5db; padding: 0.5em 0.75em; text-align: left; }
+        .markdown-content th { background-color: #f9fafb; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8 min-h-screen flex flex-col">
+
+    <main class="max-w-5xl w-full mx-auto bg-white p-6 md:p-10 rounded-lg shadow-xl flex-grow">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-6">Analizador de Variantes Genéticas</h1>
+        <p class="text-sm text-center text-gray-600 mb-8">
+            Ingrese Gen, Transcrito de Referencia (NM_... o ENST...) y Variante cDNA (c....) para obtener un análisis preliminar ACMG y Bayesiano (Modelo Tavtigian/Quaio) generado por IA.
+        </p>
+
+        <form id="variant-form" class="space-y-5">
+            <div>
+                <label for="gene" class="block text-sm font-medium text-gray-700">Gen*:</label>
+                <input type="text" id="gene" name="gene" required
+                       placeholder="Ej: BRCA2, TP53"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="transcript-id" class="block text-sm font-medium text-gray-700">Transcrito Ref.*:</label>
+                <input type="text" id="transcript-id" name="transcript_id" required
+                       placeholder="Ej: NM_000059.3, ENST00000380152"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="cdna-variant" class="block text-sm font-medium text-gray-700">Variante cDNA*:</label>
+                <input type="text" id="cdna-variant" name="cdna_variant" required
+                       placeholder="Ej: c.156_157insAlu, c.76A>C"
+                       pattern="c\..+" title="Debe empezar con 'c.' seguido de la descripción de la variante"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+            </div>
+            <div>
+                <button type="submit" id="submit-button"
+                        class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                    Analizar Variante
+                </button>
+            </div>
+        </form>
+
+        <div id="status" class="mt-6 text-center min-h-[20px]"></div>
+        <div id="loader" class="hidden loader"></div> <div id="results-container" class="mt-8 space-y-6 hidden">
+             <div id="analysis-report" class="markdown-content"></div>
+             <div id="bayesian-viz"></div>
+        </div>
+
+    </main>
+
+    <footer class="text-center text-xs text-gray-500 mt-8 pb-4">
+        Descargo de responsabilidad: Esta herramienta proporciona análisis generados por IA con fines informativos y educativos únicamente. No sustituye el consejo médico ni el diagnóstico profesional.
+    </footer>
+
+    <script>
+        const form = document.getElementById('variant-form');
+        const geneInput = document.getElementById('gene');
+        const transcriptInput = document.getElementById('transcript-id');
+        const cdnaInput = document.getElementById('cdna-variant');
+        const statusDiv = document.getElementById('status');
+        const loaderDiv = document.getElementById('loader');
+        const resultsContainer = document.getElementById('results-container');
+        const reportDiv = document.getElementById('analysis-report');
+        const bayesianVizDiv = document.getElementById('bayesian-viz');
+        const submitButton = document.getElementById('submit-button');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const gene = geneInput.value.trim();
+            const transcriptId = transcriptInput.value.trim();
+            const cdnaVariant = cdnaInput.value.trim();
+
+            // Validaciones básicas frontend
+            if (!gene || !transcriptId || !cdnaVariant) {
+                statusDiv.textContent = 'Por favor, completa todos los campos.';
+                statusDiv.className = 'mt-6 text-center text-red-600 font-medium';
+                return;
+            }
+             if (!cdnaVariant.startsWith('c.')) {
+                statusDiv.textContent = "El formato de 'Variante cDNA' debe empezar con 'c.'";
+                statusDiv.className = 'mt-6 text-center text-red-600 font-medium';
+                return;
+            }
+
+            // Mostrar estado de carga
+            statusDiv.textContent = 'Procesando... Esto puede tardar varios minutos.';
+            statusDiv.className = 'mt-6 text-center text-blue-600';
+            loaderDiv.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            reportDiv.innerHTML = '';
+            bayesianVizDiv.innerHTML = '';
+            submitButton.disabled = true;
+            submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                // Llamada a la API backend
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', },
+                    body: JSON.stringify({
+                        gene: gene,
+                        transcript_id: transcriptId,
+                        cdna_variant: cdnaVariant
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    statusDiv.textContent = `Error (${response.status}): ${data.message || 'Error desconocido del servidor.'}`;
+                    statusDiv.className = 'mt-6 text-center text-red-600 font-medium';
+                } else {
+                    // Éxito: Mostrar resultados
+                    statusDiv.textContent = 'Análisis completado.';
+                    statusDiv.className = 'mt-6 text-center text-green-600 font-medium';
+                    resultsContainer.classList.remove('hidden');
+
+                    // Renderizar Markdown a HTML usando Marked.js
+                    if (data.acmg_bayesian_report) {
+                        reportDiv.innerHTML = marked.parse(data.acmg_bayesian_report);
+                    } else {
+                         reportDiv.innerHTML = '<p>No se recibió reporte del análisis.</p>';
+                    }
+
+
+                    // Generar visualización Bayesiana si hay probabilidad
+                    if (data.posterior_probability !== null && typeof data.posterior_probability === 'number') {
+                        const post_p_value = data.posterior_probability;
+                         if (post_p_value >= 0.0 && post_p_value <= 1.0) {
+                            const hue = 240 * (1 - post_p_value); // Azul (240) a Rojo (0)
+                            const saturation = 80;
+                            const lightness = 55;
+                            const color_style = `hsl(${hue.toFixed(2)}, ${saturation}%, ${lightness}%)`;
+                            const text_color = lightness < 60 ? 'white' : 'black';
+
+                            const color_bar_html = `
+                             <div style="margin-top: 1.5em; padding: 12px; border: 1px solid #dee2e6; border-radius: 6px; background-color: #f8f9fa;">
+                                 <h4 style="margin-top: 0; margin-bottom: 8px; font-weight: 600; color: #343a40;">Visualización Probabilidad Posterior (Bayesiana)</h4>
+                                 <div style="display: flex; align-items: center; margin-bottom: 8px; gap: 8px;">
+                                     <span style="font-size: 0.85em; color: #495057;">Benigno</span>
+                                     <div style="flex-grow: 1; height: 22px; background: linear-gradient(to right, hsl(240, 80%, 55%), hsl(0, 80%, 55%)); border-radius: 4px; position: relative; border: 1px solid #ced4da;">
+                                         <div title="Post_P ≈ ${post_p_value.toFixed(4)}" style="position: absolute; left: ${(post_p_value * 100).toFixed(2)}%; top: -3px; width: 5px; height: 26px; background-color: black; border-radius: 2px; transform: translateX(-50%); box-shadow: 0 0 3px rgba(0,0,0,0.5);"></div>
+                                     </div>
+                                     <span style="font-size: 0.85em; color: #495057;">Patogénico</span>
+                                 </div>
+                                 <div style="text-align: center; font-weight: bold; margin-top: 8px; padding: 6px 10px; background-color: ${color_style}; border-radius: 4px; color: ${text_color}; font-size: 0.95em; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                                     Probabilidad Posterior ≈ ${post_p_value.toFixed(4)}
+                                 </div>
+                             </div>
+                             `;
+                            bayesianVizDiv.innerHTML = color_bar_html;
+                        } else {
+                             bayesianVizDiv.innerHTML = '<p class="text-xs text-gray-500">Valor de Probabilidad Posterior fuera de rango [0, 1].</p>';
+                        }
+                    } else {
+                         bayesianVizDiv.innerHTML = '<p class="text-xs text-gray-500">No se pudo determinar la Probabilidad Posterior para la visualización.</p>';
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error en la solicitud fetch:', error);
+                statusDiv.textContent = 'Error de conexión o al procesar la solicitud.';
+                statusDiv.className = 'mt-6 text-center text-red-600 font-medium';
+            } finally {
+                 loaderDiv.classList.add('hidden'); // Ocultar loader
+                 submitButton.disabled = false;
+                 submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    </script>
+
+</body>
+</html>
+
