@@ -6,22 +6,24 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 import google.generativeai as genai
+import logging # Importar logging
 
-# --- Configuración Inicial ---
-# No load_dotenv needed for Vercel (uses environment variables directly)
-# No Flask app initialization needed
+# Configurar logging básico
+logging.basicConfig(level=logging.INFO)
+
 
 # --- Configuración de Gemini ---
+# (Sin cambios aquí... )
 gemini_configured = False
 model = None
-TARGET_GEMINI_MODEL = 'gemini-2.5-pro-exp-03-25' # Using the model from the Flask example
+TARGET_GEMINI_MODEL = 'gemini-1.5-pro-latest' # Using the model from the Flask example
 
 try:
     # GOOGLE_API_KEY should be set as an environment variable in Vercel
     GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
     if GOOGLE_API_KEY:
         genai.configure(api_key=GOOGLE_API_KEY)
-        print(f"Initializing Gemini model: {TARGET_GEMINI_MODEL}...")
+        logging.info(f"Initializing Gemini model: {TARGET_GEMINI_MODEL}...")
         # Add safety settings if needed, e.g.,
         # safety_settings = [
         #     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
@@ -34,20 +36,20 @@ try:
             # safety_settings=safety_settings # Uncomment to apply safety settings
         )
         gemini_configured = True
-        print("Gemini model initialized.")
+        logging.info("Gemini model initialized.")
     else:
-        print("\nWARNING: Environment variable 'GOOGLE_API_KEY' NOT found.")
-        print("Gemini analysis will not work.")
+        logging.warning("\nWARNING: Environment variable 'GOOGLE_API_KEY' NOT found.")
+        logging.warning("Gemini analysis will not work.")
 except Exception as e:
-    print(f"\nAn error occurred configuring Gemini: {e}")
+    logging.error(f"\nAn error occurred configuring Gemini: {e}")
     gemini_configured = False # Ensure it's marked as not configured
 
-# --- Funciones de Lógica (Helper Functions) ---
-# These functions are kept separate from the handler class for clarity
 
+# --- Funciones de Lógica (Helper Functions) ---
+# (Sin cambios aquí... call_ensembl_vep, run_initial_gemini_analysis, run_final_gemini_interpretation)
 def call_ensembl_vep(query_identifier):
     """Calls the Ensembl VEP API and returns data or an error message."""
-    print(f"--- 1. Querying Ensembl VEP for: {query_identifier} ---")
+    logging.info(f"--- 1. Querying Ensembl VEP for: {query_identifier} ---")
     server_vep = "https://rest.ensembl.org"
     # Ensure the query identifier is properly URL-encoded
     encoded_query = urllib.parse.quote(query_identifier)
@@ -73,7 +75,7 @@ def call_ensembl_vep(query_identifier):
     vep_timeout = 300 # 5 minutes timeout
 
     try:
-        print(f"Making GET request to Ensembl VEP (timeout={vep_timeout}s)...")
+        logging.info(f"Making GET request to Ensembl VEP (timeout={vep_timeout}s)... URL: {full_url}")
         response = requests.get(full_url, headers={"Content-Type": "application/json", "Accept": "application/json"}, timeout=vep_timeout)
         response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
         data = response.json()
@@ -81,26 +83,26 @@ def call_ensembl_vep(query_identifier):
         # Process VEP response data
         if data and isinstance(data, list) and len(data) > 0:
             if len(data) > 1:
-                print(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.")
-            print("✅ Ensembl VEP response received successfully.")
+                logging.warning(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.")
+            logging.info("✅ Ensembl VEP response received successfully.")
             return data[0], None # Return the first result and no error
         elif data and isinstance(data, list) and len(data) == 0:
             error_msg = f"Ensembl VEP found no results (empty list) for '{query_identifier}'."
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
         else:
             # Handle cases where VEP might return non-list data or unexpected format
             error_msg = f"Unexpected response format from Ensembl VEP: {str(data)[:300]}..."
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
 
     except requests.exceptions.Timeout:
         error_msg = f"The request to Ensembl VEP timed out after {vep_timeout} seconds."
-        print(f"❌ Error: {error_msg}")
+        logging.error(f"❌ Error: {error_msg}")
         return None, error_msg
     except requests.exceptions.RequestException as e:
         error_msg = f"Error during Ensembl VEP request: {e}"
-        print(f"❌ Error: {error_msg}")
+        logging.error(f"❌ Error: {error_msg}")
         error_detail = ""
         status_code = 502 # Bad Gateway default for upstream errors
         if hasattr(e, 'response') and e.response is not None:
@@ -109,13 +111,13 @@ def call_ensembl_vep(query_identifier):
                 error_detail = json.dumps(e.response.json(), indent=2)
             except json.JSONDecodeError:
                 error_detail = e.response.text
-            print(f"Detail (Status {status_code}): {error_detail[:500]}")
+            logging.error(f"Detail (Status {status_code}): {error_detail[:500]}")
         # Return a combined error message
         return None, f"{error_msg} (Status: {status_code}, Detail: {error_detail[:100]}...)"
     except Exception as e_general:
         # Catch any other unexpected errors during VEP processing
         error_msg = f"Unexpected error processing Ensembl VEP response: {e_general}"
-        print(f"❌ Error: {error_msg}")
+        logging.error(f"❌ Error: {error_msg}")
         return None, error_msg
 
 def run_initial_gemini_analysis(query_identifier, decoded_vep):
@@ -124,7 +126,7 @@ def run_initial_gemini_analysis(query_identifier, decoded_vep):
     if not gemini_configured or not model:
         return None, "Gemini model is not configured on the backend."
 
-    print(f"\n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
+    logging.info(f"\n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
     try:
         # Using the detailed prompt from the Flask app
         prompt_vep_quant_acmg_freq_assume = f"""
@@ -209,35 +211,35 @@ Provide a structured response containing:
         gemini_timeout = 480 # Increased timeout for potentially complex analysis
         generation_config = genai.types.GenerationConfig(temperature=0.1) # Low temperature for consistency
 
-        print(f"Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...")
+        logging.info(f"Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...")
         response_gemini = model.generate_content(
             prompt_vep_quant_acmg_freq_assume,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        print("\n--- Results from Initial Gemini Analysis ---")
+        logging.info("\n--- Results from Initial Gemini Analysis ---")
 
         # Process Gemini response safely
         try:
             # Access the text part of the response
             analysis_output_markdown = response_gemini.text
-            print("✅ Initial analysis from Gemini received.")
+            logging.info("✅ Initial analysis from Gemini received.")
             return analysis_output_markdown, None # Return result and no error
         except ValueError:
             # Handle cases where the response might be blocked due to safety settings
             error_msg = f"Gemini response (initial) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
         except Exception as e_resp:
             # Handle other potential errors accessing response parts
             error_msg = f"Unexpected error processing initial Gemini response: {e_resp}"
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
 
     except Exception as e_gemini_call:
         # Handle errors during the API call itself (e.g., network issues, timeout)
         error_msg = f"Error calling Gemini for initial analysis: {e_gemini_call}"
-        print(f"❌ Error: {error_msg}")
+        logging.error(f"❌ Error: {error_msg}")
         return None, error_msg
 
 def run_final_gemini_interpretation(query_identifier, gene_name, initial_analysis_markdown, clinical_info):
@@ -248,7 +250,7 @@ def run_final_gemini_interpretation(query_identifier, gene_name, initial_analysi
     if not initial_analysis_markdown:
         return None, "Missing initial analysis result for final interpretation."
 
-    print(f"\n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
+    logging.info(f"\n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
     try:
         # Prompt for the final interpretation (same as Flask app)
         prompt_final_interpretation = f"""
@@ -291,33 +293,32 @@ Based **only** on the information provided above (initial classification report 
         gemini_timeout = 300 # Standard timeout for final interpretation
         generation_config = genai.types.GenerationConfig(temperature=0.1)
 
-        print(f"Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...")
+        logging.info(f"Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...")
         response_gemini = model.generate_content(
             prompt_final_interpretation,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        print("\n--- Results from Final Gemini Interpretation ---")
+        logging.info("\n--- Results from Final Gemini Interpretation ---")
 
         # Process Gemini response safely
         try:
             final_interpretation_markdown = response_gemini.text
-            print("✅ Final interpretation from Gemini received.")
+            logging.info("✅ Final interpretation from Gemini received.")
             return final_interpretation_markdown, None
         except ValueError:
             error_msg = f"Gemini response (final interpretation) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
         except Exception as e_resp:
             error_msg = f"Unexpected error processing final Gemini response: {e_resp}"
-            print(f"❌ Error: {error_msg}")
+            logging.error(f"❌ Error: {error_msg}")
             return None, error_msg
 
     except Exception as e_gemini_call:
         error_msg = f"Error calling Gemini for final interpretation: {e_gemini_call}"
-        print(f"❌ Error: {error_msg}")
+        logging.error(f"❌ Error: {error_msg}")
         return None, error_msg
-
 
 # --- Vercel Serverless Handler Class ---
 
@@ -346,17 +347,30 @@ class handler(BaseHTTPRequestHandler):
             # Read and parse the request body
             body = self.rfile.read(content_length)
             if not body:
+                 logging.warning("Received empty request body.") # Log empty body
                  response_data = {'status': 'error', 'message': 'Request body is empty'}
                  status_code = 400
             else:
-                input_data = json.loads(body.decode('utf-8'))
+                # Decode and parse JSON
+                body_decoded = body.decode('utf-8')
+                input_data = json.loads(body_decoded)
+                # *** ADDED LOGGING HERE ***
+                logging.info(f"Received POST request for path: {parsed_path}")
+                logging.info(f"Request Body Content-Length: {content_length}")
+                logging.info(f"Decoded Request Body: {body_decoded}") # Log the raw decoded body
+                logging.info(f"Parsed Input Data: {input_data}") # Log the parsed dictionary
 
                 # --- Route based on path ---
                 if parsed_path == '/analyze':
-                    print("\n--- Received request for /analyze ---")
+                    logging.info("\n--- Handling request for /analyze ---")
                     gene = input_data.get('gene')
-                    transcript = input_data.get('transcript')
-                    cdna = input_data.get('cdna')
+                    transcript = input_data.get('transcript') # Extract data
+                    cdna = input_data.get('cdna')             # Extract data
+
+                    # *** ADDED LOGGING FOR EXTRACTED VALUES ***
+                    logging.info(f"Extracted gene: {gene}")
+                    logging.info(f"Extracted transcript: {transcript}")
+                    logging.info(f"Extracted cdna: {cdna}")
 
                     # Validation
                     errors = []
@@ -366,6 +380,8 @@ class handler(BaseHTTPRequestHandler):
                     elif not cdna.startswith('c.'): errors.append("Invalid cDNA format (must start with 'c.')")
 
                     if errors:
+                        # Log validation errors before sending response
+                        logging.warning(f"Validation failed: {'; '.join(errors)}")
                         response_data = {'status': 'error', 'message': "; ".join(errors)}
                         status_code = 400
                     else:
@@ -375,21 +391,20 @@ class handler(BaseHTTPRequestHandler):
                         vep_data, vep_error = call_ensembl_vep(query_identifier)
                         if vep_error:
                             response_data = {'status': 'error', 'message': f"VEP Error: {vep_error}"}
-                            # Try to determine a more specific status code from VEP error if possible
-                            if "timed out" in vep_error: status_code = 504 # Gateway Timeout
-                            elif "Status: 400" in vep_error: status_code = 400 # Bad Request (likely bad HGVS)
-                            elif "Status: 404" in vep_error: status_code = 404 # Not Found
-                            elif "no results" in vep_error: status_code = 404 # Not Found
-                            else: status_code = 502 # Bad Gateway (generic upstream error)
+                            if "timed out" in vep_error: status_code = 504
+                            elif "Status: 400" in vep_error: status_code = 400
+                            elif "Status: 404" in vep_error: status_code = 404
+                            elif "no results" in vep_error: status_code = 404
+                            else: status_code = 502
                         elif not vep_data:
                              response_data = {'status': 'error', 'message': 'No valid data received from VEP.'}
-                             status_code = 404 # Not Found
+                             status_code = 404
                         else:
                             # 2. Call Gemini (Initial Analysis)
                             initial_markdown, gemini_error = run_initial_gemini_analysis(query_identifier, vep_data)
                             if gemini_error:
                                 response_data = {'status': 'error', 'message': f"Gemini Initial Analysis Error: {gemini_error}"}
-                                status_code = 500 # Internal Server Error (Gemini issue)
+                                status_code = 500
                             elif not initial_markdown:
                                 response_data = {'status': 'error', 'message': 'Gemini initial analysis did not produce results.'}
                                 status_code = 500
@@ -397,13 +412,14 @@ class handler(BaseHTTPRequestHandler):
                                 # Success for /analyze
                                 response_data = {'status': 'success', 'markdown_result': initial_markdown}
                                 status_code = 200
-                                print("--- /analyze processing completed successfully ---")
+                                logging.info("--- /analyze processing completed successfully ---")
 
                 elif parsed_path == '/interpret_clinical':
-                    print("\n--- Received request for /interpret_clinical ---")
+                    logging.info("\n--- Handling request for /interpret_clinical ---")
+                    # (Add similar logging inside this block if needed)
                     gene = input_data.get('gene')
-                    transcript = input_data.get('transcript') # Needed to reconstruct query_id
-                    cdna = input_data.get('cdna')             # Needed to reconstruct query_id
+                    transcript = input_data.get('transcript')
+                    cdna = input_data.get('cdna')
                     initial_markdown = input_data.get('initial_markdown')
                     clinical_info = input_data.get('clinical_info')
 
@@ -416,6 +432,7 @@ class handler(BaseHTTPRequestHandler):
                     if not clinical_info: errors.append("Missing required field: 'clinical_info'")
 
                     if errors:
+                        logging.warning(f"Validation failed for /interpret_clinical: {'; '.join(errors)}")
                         response_data = {'status': 'error', 'message': "; ".join(errors)}
                         status_code = 400
                     else:
@@ -425,7 +442,7 @@ class handler(BaseHTTPRequestHandler):
 
                         if gemini_error:
                             response_data = {'status': 'error', 'message': f"Gemini Final Interpretation Error: {gemini_error}"}
-                            status_code = 500 # Internal Server Error
+                            status_code = 500
                         elif not final_interpretation:
                             response_data = {'status': 'error', 'message': 'Gemini final interpretation did not produce results.'}
                             status_code = 500
@@ -433,20 +450,22 @@ class handler(BaseHTTPRequestHandler):
                             # Success for /interpret_clinical
                             response_data = {'status': 'success', 'final_interpretation': final_interpretation}
                             status_code = 200
-                            print("--- /interpret_clinical processing completed successfully ---")
+                            logging.info("--- /interpret_clinical processing completed successfully ---")
 
                 else:
                     # Handle unknown paths
+                    logging.warning(f"Endpoint not found: {parsed_path}")
                     response_data = {'status': 'error', 'message': f'Endpoint not found: {parsed_path}'}
                     status_code = 404
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON received: {e}")
+            logging.error(f"Failed Body: {body_decoded if 'body_decoded' in locals() else 'Could not decode body'}") # Log body that failed
             response_data = {'status': 'error', 'message': 'Invalid JSON format in request body'}
             status_code = 400
         except Exception as e:
             # Catch-all for unexpected errors during request processing
-            print(f"Unhandled Exception in POST handler for path {parsed_path}: {e}")
-            # Avoid leaking detailed internal errors to the client in production
+            logging.exception(f"Unhandled Exception in POST handler for path {parsed_path}: {e}") # Use logging.exception to include traceback
             response_data = {'status': 'error', 'message': 'An internal server error occurred.'}
             status_code = 500
 
@@ -458,5 +477,3 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(response_data).encode('utf-8'))
 
 # Note: No `if __name__ == '__main__':` block is needed for Vercel deployment.
-# Vercel automatically looks for the `handler` class.
-
