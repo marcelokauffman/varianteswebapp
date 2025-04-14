@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizador de Variantes Genéticas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Loading spinner animation */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #4f46e5; /* Indigo */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 25px auto; /* Center the loader */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Base font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Basic styling for Markdown content rendered by marked.js */
+        .results-content h2 {
+            font-size: 1.25rem; /* text-xl */
+            line-height: 1.75rem;
+            font-weight: 600; /* font-semibold */
+            margin-top: 1.5rem; /* mt-6 */
+            margin-bottom: 0.75rem; /* mb-3 */
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
+            padding-bottom: 0.5rem; /* pb-2 */
+        }
+        .results-content h3 {
+            font-size: 1.1rem; /* Slightly smaller than h2 */
+            line-height: 1.6rem;
+            font-weight: 600; /* font-semibold */
+            margin-top: 1.25rem; /* mt-5 */
+            margin-bottom: 0.5rem; /* mb-2 */
+        }
+        .results-content ul {
+            list-style-type: disc;
+            margin-left: 1.5rem; /* ml-6 */
+            margin-bottom: 1rem; /* mb-4 */
+        }
+         .results-content ol {
+            list-style-type: decimal;
+            margin-left: 1.5rem; /* ml-6 */
+            margin-bottom: 1rem; /* mb-4 */
+        }
+        .results-content li {
+            margin-bottom: 0.3rem; /* Slightly less spacing */
+        }
+        .results-content p {
+            margin-bottom: 0.75rem; /* mb-3 */
+            line-height: 1.6; /* leading-relaxed */
+        }
+        .results-content code {
+            background-color: #eef2ff; /* bg-indigo-50 */
+            color: #4338ca; /* text-indigo-800 */
+            padding: 0.15rem 0.4rem;
+            border-radius: 0.25rem; /* rounded */
+            font-family: monospace;
+            font-size: 0.875em; /* text-sm */
+        }
+         .results-content pre > code {
+             display: block;
+             padding: 0.75rem; /* p-3 */
+             overflow-x: auto; /* Allow horizontal scrolling for long code */
+             background-color: #f3f4f6; /* bg-gray-100 */
+             color: #1f2937; /* text-gray-800 */
+         }
+        .results-content strong, .results-content b {
+            font-weight: 600; /* font-semibold */
+        }
+        .results-content blockquote {
+            border-left: 4px solid #c7d2fe; /* border-l-4 border-indigo-200 */
+            padding-left: 1rem; /* pl-4 */
+            margin-left: 0;
+            margin-top: 1rem; /* mt-4 */
+            margin-bottom: 1rem; /* mb-4 */
+            font-style: italic;
+            color: #475569; /* text-slate-600 */
+        }
+        .results-content a {
+            color: #4f46e5; /* text-indigo-600 */
+            text-decoration: underline;
+        }
+        .results-content a:hover {
+            color: #4338ca; /* text-indigo-800 */
+        }
+        .results-content table {
+            width: 100%;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            border-collapse: collapse;
+        }
+        .results-content th, .results-content td {
+            border: 1px solid #e5e7eb; /* border border-gray-200 */
+            padding: 0.5rem 0.75rem; /* px-3 py-2 */
+            text-align: left;
+        }
+        .results-content th {
+            background-color: #f9fafb; /* bg-gray-50 */
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 lg:p-6">
+    <div class="bg-gradient-to-br from-gray-50 via-white to-gray-100 p-6 sm:p-8 md:p-10 rounded-xl shadow-xl w-full max-w-3xl border border-gray-200">
+        <h1 class="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-center text-gray-800 tracking-tight">
+            Analizador de Variantes Genéticas
+            <span class="block text-sm font-normal text-indigo-600 mt-1">(VEP + Gemini - 2 Pasos)</span>
+        </h1>
+
+        <form id="variant-form" class="space-y-5">
+            <h2 class="text-lg font-semibold text-gray-700 border-b pb-2">Paso 1: Datos de la Variante</h2>
+            <div>
+                <label for="gene" class="block text-sm font-medium text-gray-600 mb-1">Gen*:</label>
+                <input type="text" id="gene" name="gene" required placeholder="Ej: BRCA2, TP53"
+                       class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+            <div>
+                <label for="transcript" class="block text-sm font-medium text-gray-600 mb-1">Transcrito Ref.*:</label>
+                <input type="text" id="transcript" name="transcript" required placeholder="Ej: NM_000059.3"
+                       class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+            <div>
+                <label for="cdna" class="block text-sm font-medium text-gray-600 mb-1">Variante cDNA*:</label>
+                <input type="text" id="cdna" name="cdna" required placeholder="Ej: c.76A>C"
+                       class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
+            </div>
+            <button type="submit" id="submit-initial-button"
+                    class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                Procesar Datos Iniciales
+            </button>
+        </form>
+
+        <div id="loading-indicator-step1" class="loader hidden"></div>
+        <div id="error-message-step1" class="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg hidden text-sm"></div>
+        <div id="results-container-step1" class="mt-8">
+            <h2 id="results-title-step1" class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2 hidden">Resultados del Análisis Inicial</h2>
+            <div id="results-output-step1" class="results-content bg-white border border-gray-200 rounded-lg p-4 sm:p-6 hidden">
+            </div>
+        </div>
+
+        <div id="step2-section" class="mt-8 border-t pt-6 hidden">
+             <h2 class="text-lg font-semibold text-gray-700 mb-4">Paso 2: Añadir Datos Clínicos (Opcional)</h2>
+             <button type="button" id="add-clinical-button" class="mb-4 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                 <svg class="-ml-1 mr-2 h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                     <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                 </svg>
+                 Añadir Datos Clínicos
+             </button>
+             <div id="clinical-input-container" class="hidden space-y-4">
+                 <div>
+                     <label for="clinical_info" class="block text-sm font-medium text-gray-600 mb-1">Información Clínica:</label>
+                     <textarea id="clinical_info" name="clinical_info" rows="5" placeholder="Ingrese aquí datos clínicos relevantes (fenotipo, HPO terms, sospecha de herencia, etc.)..."
+                               class="mt-1 block w-full px-4 py-2.5 border border-gray-300 rounded-lg shadow-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out"></textarea>
+                 </div>
+                 <button type="button" id="submit-clinical-button"
+                         class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-base font-semibold text-white bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                     Interpretar con Datos Clínicos
+                 </button>
+             </div>
+             <div id="loading-indicator-step2" class="loader hidden"></div>
+             <div id="error-message-step2" class="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg hidden text-sm"></div>
+             <div id="results-container-step2" class="mt-6">
+                 <h2 id="results-title-step2" class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2 hidden">Interpretación Final Integrada</h2>
+                 <div id="results-output-step2" class="results-content bg-white border border-gray-200 rounded-lg p-4 sm:p-6 hidden">
+                 </div>
+             </div>
+        </div>
+
+         <p class="mt-8 text-xs text-gray-500 text-center">
+             <strong>Importante</strong>: Los análisis generados por la IA son evaluaciones "in silico". La interpretación final con datos clínicos sigue siendo una asistencia generada por IA y NO sustituye el juicio clínico experto ni constituye un diagnóstico médico.
+         </p>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const initialForm = document.getElementById('variant-form');
+        const submitInitialButton = document.getElementById('submit-initial-button');
+        const loadingIndicatorStep1 = document.getElementById('loading-indicator-step1');
+        const errorMessageStep1 = document.getElementById('error-message-step1');
+        const resultsContainerStep1 = document.getElementById('results-container-step1');
+        const resultsTitleStep1 = document.getElementById('results-title-step1');
+        const resultsOutputStep1 = document.getElementById('results-output-step1');
+
+        const step2Section = document.getElementById('step2-section');
+        const addClinicalButton = document.getElementById('add-clinical-button');
+        const clinicalInputContainer = document.getElementById('clinical-input-container');
+        const clinicalInfoTextarea = document.getElementById('clinical_info');
+        const submitClinicalButton = document.getElementById('submit-clinical-button');
+        const loadingIndicatorStep2 = document.getElementById('loading-indicator-step2');
+        const errorMessageStep2 = document.getElementById('error-message-step2');
+        const resultsContainerStep2 = document.getElementById('results-container-step2');
+        const resultsTitleStep2 = document.getElementById('results-title-step2');
+        const resultsOutputStep2 = document.getElementById('results-output-step2');
+
+        // --- Backend API Endpoint ---
+        // Use relative path for Vercel deployment. Assumes app.py is in /api directory.
+        const analyzeEndpoint = '/api/analyze';
+        const interpretEndpoint = '/api/interpret_clinical';
+
+        // --- State Variables ---
+        let currentGene = '';
+        let currentTranscript = '';
+        let currentCdna = '';
+        let initialMarkdownResult = ''; // Store Step 1 result
+        let isStep1Loading = false;
+        let isStep2Loading = false;
+
+        // --- Helper Functions ---
+        function setLoadingState(step, isLoading) {
+            if (step === 1) {
+                isStep1Loading = isLoading;
+                loadingIndicatorStep1.classList.toggle('hidden', !isLoading);
+                submitInitialButton.disabled = isLoading;
+                // Disable step 2 interaction while step 1 is loading
+                addClinicalButton.disabled = isLoading;
+                submitClinicalButton.disabled = isLoading;
+            } else if (step === 2) {
+                isStep2Loading = isLoading;
+                loadingIndicatorStep2.classList.toggle('hidden', !isLoading);
+                submitClinicalButton.disabled = isLoading;
+                // Also disable step 1 button while step 2 is loading? Optional.
+                // submitInitialButton.disabled = isLoading;
+            }
+        }
+
+        function displayError(step, message) {
+            const errorElement = (step === 1) ? errorMessageStep1 : errorMessageStep2;
+            errorElement.textContent = message;
+            errorElement.classList.remove('hidden');
+        }
+
+        function resetUI(stepToReset = 'all') {
+             // Reset Step 1 UI
+             if (stepToReset === 'all' || stepToReset === 1) {
+                 errorMessageStep1.classList.add('hidden');
+                 resultsOutputStep1.classList.add('hidden');
+                 resultsTitleStep1.classList.add('hidden');
+                 initialMarkdownResult = ''; // Clear stored result
+             }
+             // Reset Step 2 UI (always reset if Step 1 is reset or if only Step 2 is requested)
+             if (stepToReset === 'all' || stepToReset === 1 || stepToReset === 2) {
+                 step2Section.classList.add('hidden');
+                 clinicalInputContainer.classList.add('hidden');
+                 errorMessageStep2.classList.add('hidden');
+                 resultsOutputStep2.classList.add('hidden');
+                 resultsTitleStep2.classList.add('hidden');
+                 clinicalInfoTextarea.value = ''; // Clear textarea
+                 addClinicalButton.disabled = false; // Re-enable button
+             }
+        }
+
+        // --- Event Listener for Initial Form Submission (Step 1) ---
+        initialForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (isStep1Loading || isStep2Loading) return; // Prevent multiple submissions
+
+            // Reset UI completely before starting Step 1
+            resetUI('all');
+
+            // Get and validate input
+            currentGene = document.getElementById('gene').value.trim();
+            currentTranscript = document.getElementById('transcript').value.trim();
+            currentCdna = document.getElementById('cdna').value.trim();
+
+            if (!currentGene || !currentTranscript || !currentCdna) {
+                displayError(1, 'Por favor, completa todos los campos obligatorios.');
+                return;
+            }
+            if (!currentCdna.startsWith('c.')) {
+                displayError(1, "El formato de 'Variante cDNA' debe empezar con 'c.' (ej: c.123A>G)");
+                return;
+            }
+
+            setLoadingState(1, true);
+
+            try {
+                const response = await fetch(analyzeEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gene: currentGene,
+                        transcript: currentTranscript,
+                        cdna: currentCdna
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    initialMarkdownResult = data.markdown_result || 'No se recibió resultado del análisis inicial.';
+                    // Use marked.parse() to convert Markdown to HTML
+                    resultsOutputStep1.innerHTML = marked.parse(initialMarkdownResult);
+                    resultsTitleStep1.classList.remove('hidden');
+                    resultsOutputStep1.classList.remove('hidden');
+                    step2Section.classList.remove('hidden'); // Show Step 2 section
+                } else {
+                     // Display more specific error from backend if available
+                    displayError(1, `Error ${response.status}: ${data.message || response.statusText || 'Error desconocido del servidor'}`);
+                }
+
+            } catch (error) {
+                console.error('Error en Paso 1:', error);
+                displayError(1, `Error de red o comunicación con el servidor (Paso 1). Verifica la conexión o contacta al administrador. (${error.message})`);
+            } finally {
+                setLoadingState(1, false);
+            }
+        });
+
+        // --- Event Listener for "Add Clinical Data" Button ---
+         addClinicalButton.addEventListener('click', () => {
+             if (isStep1Loading || isStep2Loading) return; // Don't allow interaction while loading
+             clinicalInputContainer.classList.remove('hidden');
+             addClinicalButton.disabled = true; // Disable after clicking
+         });
+
+        // --- Event Listener for "Interpret with Clinical Data" Button (Step 2) ---
+        submitClinicalButton.addEventListener('click', async () => {
+            if (isStep1Loading || isStep2Loading) return; // Prevent multiple submissions
+
+            const clinicalInfo = clinicalInfoTextarea.value.trim();
+
+            // Reset only Step 2 errors/results before starting Step 2
+            errorMessageStep2.classList.add('hidden');
+            resultsOutputStep2.classList.add('hidden');
+            resultsTitleStep2.classList.add('hidden');
+
+
+            if (!clinicalInfo) {
+                displayError(2, 'Por favor, ingrese información clínica.');
+                return;
+            }
+            if (!initialMarkdownResult) {
+                 // This shouldn't happen if the UI flow is correct, but good to check
+                displayError(2, 'Error: No se encontró el análisis inicial. Ejecuta el Paso 1 primero.');
+                return;
+            }
+
+            setLoadingState(2, true);
+
+            try {
+                const response = await fetch(interpretEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gene: currentGene,
+                        transcript: currentTranscript,
+                        cdna: currentCdna,
+                        initial_markdown: initialMarkdownResult, // Send result from Step 1
+                        clinical_info: clinicalInfo
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    // Use marked.parse() to convert Markdown to HTML
+                    resultsOutputStep2.innerHTML = marked.parse(data.final_interpretation || 'No se recibió interpretación final.');
+                    resultsTitleStep2.classList.remove('hidden');
+                    resultsOutputStep2.classList.remove('hidden');
+                } else {
+                    displayError(2, `Error ${response.status}: ${data.message || response.statusText || 'Error desconocido del servidor'}`);
+                }
+
+            } catch (error) {
+                console.error('Error en Paso 2:', error);
+                displayError(2, `Error de red o comunicación con el servidor (Paso 2). Verifica la conexión o contacta al administrador. (${error.message})`);
+            } finally {
+                setLoadingState(2, false);
+            }
+        });
+
+    </script>
+</body>
+</html>
+
