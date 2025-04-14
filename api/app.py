@@ -6,34 +6,35 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 import google.generativeai as genai
-# No se necesita importar logging si solo usamos print
+import traceback # Importar traceback para excepciones
 
 # --- Configuración de Gemini ---
 gemini_configured = False
 model = None
+# *** USANDO EL MODELO SOLICITADO ***
 TARGET_GEMINI_MODEL = 'gemini-2.5-pro-exp-03-25'
 
 try:
     GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
     if GOOGLE_API_KEY:
         genai.configure(api_key=GOOGLE_API_KEY)
-        print(f"INFO: Initializing Gemini model: {TARGET_GEMINI_MODEL}...") # Usando print
+        print(f"INFO: Initializing Gemini model: {TARGET_GEMINI_MODEL}...")
         model = genai.GenerativeModel(TARGET_GEMINI_MODEL)
         gemini_configured = True
-        print("INFO: Gemini model initialized.") # Usando print
+        print("INFO: Gemini model initialized.")
     else:
-        print("WARNING: Environment variable 'GOOGLE_API_KEY' NOT found.") # Usando print
-        print("WARNING: Gemini analysis will not work.") # Usando print
+        print("WARNING: Environment variable 'GOOGLE_API_KEY' NOT found.")
+        print("WARNING: Gemini analysis will not work.")
 except Exception as e:
-    print(f"ERROR: An error occurred configuring Gemini: {e}") # Usando print
+    print(f"ERROR: An error occurred configuring Gemini: {e}")
     gemini_configured = False
 
 # --- Funciones de Lógica (Helper Functions) ---
 # (Sin cambios aquí... call_ensembl_vep, run_initial_gemini_analysis, run_final_gemini_interpretation)
-# (Sería bueno añadir prints dentro de estas también si el problema persiste)
+# (Se mantienen los prints dentro de estas funciones)
 def call_ensembl_vep(query_identifier):
     """Calls the Ensembl VEP API and returns data or an error message."""
-    print(f"DEBUG: --- 1. Querying Ensembl VEP for: {query_identifier} ---") # Usando print
+    print(f"DEBUG: --- 1. Querying Ensembl VEP for: {query_identifier} ---")
     server_vep = "https://rest.ensembl.org"
     encoded_query = urllib.parse.quote(query_identifier)
     ext_vep_base = f"/vep/human/hgvs/{encoded_query}"
@@ -56,51 +57,51 @@ def call_ensembl_vep(query_identifier):
     vep_timeout = 300
 
     try:
-        print(f"DEBUG: Making GET request to Ensembl VEP (timeout={vep_timeout}s)... URL: {full_url}") # Usando print
+        print(f"DEBUG: Making GET request to Ensembl VEP (timeout={vep_timeout}s)... URL: {full_url}")
         response = requests.get(full_url, headers={"Content-Type": "application/json", "Accept": "application/json"}, timeout=vep_timeout)
         response.raise_for_status()
         data = response.json()
         if data and isinstance(data, list) and len(data) > 0:
             if len(data) > 1:
-                print(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.") # Usando print
-            print("DEBUG: ✅ Ensembl VEP response received successfully.") # Usando print
+                print(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.")
+            print("DEBUG: ✅ Ensembl VEP response received successfully.")
             return data[0], None
         elif data and isinstance(data, list) and len(data) == 0:
             error_msg = f"Ensembl VEP found no results (empty list) for '{query_identifier}'."
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
         else:
             error_msg = f"Unexpected response format from Ensembl VEP: {str(data)[:300]}..."
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
     except requests.exceptions.Timeout:
         error_msg = f"The request to Ensembl VEP timed out after {vep_timeout} seconds."
-        print(f"ERROR: {error_msg}") # Usando print
+        print(f"ERROR: {error_msg}")
         return None, error_msg
     except requests.exceptions.RequestException as e:
         error_msg = f"Error during Ensembl VEP request: {e}"
-        print(f"ERROR: {error_msg}") # Usando print
+        print(f"ERROR: {error_msg}")
         error_detail = ""
         status_code = 502
         if hasattr(e, 'response') and e.response is not None:
             status_code = e.response.status_code
             try: error_detail = json.dumps(e.response.json(), indent=2)
             except json.JSONDecodeError: error_detail = e.response.text
-            print(f"ERROR Detail (Status {status_code}): {error_detail[:500]}") # Usando print
+            print(f"ERROR Detail (Status {status_code}): {error_detail[:500]}")
         return None, f"{error_msg} (Status: {status_code}, Detail: {error_detail[:100]}...)"
     except Exception as e_general:
         error_msg = f"Unexpected error processing Ensembl VEP response: {e_general}"
-        print(f"ERROR: {error_msg}") # Usando print
+        print(f"ERROR: {error_msg}")
         return None, error_msg
 
 def run_initial_gemini_analysis(query_identifier, decoded_vep):
     """Performs the first Gemini call for quantitative classification."""
     global model, gemini_configured, TARGET_GEMINI_MODEL
     if not gemini_configured or not model:
-        print("ERROR: Cannot run Gemini analysis, model not configured.") # Usando print
+        print("ERROR: Cannot run Gemini analysis, model not configured.")
         return None, "Gemini model is not configured on the backend."
 
-    print(f"DEBUG: \n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ") # Usando print
+    print(f"DEBUG: \n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
     try:
         prompt_vep_quant_acmg_freq_assume = f"""
 ## ROLE AND GOAL
@@ -184,43 +185,43 @@ Provide a structured response containing:
         gemini_timeout = 480
         generation_config = genai.types.GenerationConfig(temperature=0.1)
 
-        print(f"DEBUG: Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...") # Usando print
+        print(f"DEBUG: Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...")
         response_gemini = model.generate_content(
             prompt_vep_quant_acmg_freq_assume,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        print("DEBUG: --- Results from Initial Gemini Analysis ---") # Usando print
+        print("DEBUG: --- Results from Initial Gemini Analysis ---")
 
         try:
             analysis_output_markdown = response_gemini.text
-            print("DEBUG: ✅ Initial analysis from Gemini received.") # Usando print
+            print("DEBUG: ✅ Initial analysis from Gemini received.")
             return analysis_output_markdown, None
         except ValueError:
             error_msg = f"Gemini response (initial) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
         except Exception as e_resp:
             error_msg = f"Unexpected error processing initial Gemini response: {e_resp}"
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
 
     except Exception as e_gemini_call:
         error_msg = f"Error calling Gemini for initial analysis: {e_gemini_call}"
-        print(f"ERROR: {error_msg}") # Usando print
+        print(f"ERROR: {error_msg}")
         return None, error_msg
 
 def run_final_gemini_interpretation(query_identifier, gene_name, initial_analysis_markdown, clinical_info):
     """Performs the second Gemini call integrating clinical data."""
     global model, gemini_configured, TARGET_GEMINI_MODEL
     if not gemini_configured or not model:
-        print("ERROR: Cannot run Gemini interpretation, model not configured.") # Usando print
+        print("ERROR: Cannot run Gemini interpretation, model not configured.")
         return None, "Gemini model is not configured on the backend."
     if not initial_analysis_markdown:
-        print("ERROR: Missing initial analysis result for final interpretation.") # Usando print
+        print("ERROR: Missing initial analysis result for final interpretation.")
         return None, "Missing initial analysis result for final interpretation."
 
-    print(f"DEBUG: \n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ") # Usando print
+    print(f"DEBUG: \n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
     try:
         prompt_final_interpretation = f"""
 ## ROLE AND GOAL
@@ -262,30 +263,30 @@ Based **only** on the information provided above (initial classification report 
         gemini_timeout = 300
         generation_config = genai.types.GenerationConfig(temperature=0.1)
 
-        print(f"DEBUG: Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...") # Usando print
+        print(f"DEBUG: Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...")
         response_gemini = model.generate_content(
             prompt_final_interpretation,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        print("DEBUG: --- Results from Final Gemini Interpretation ---") # Usando print
+        print("DEBUG: --- Results from Final Gemini Interpretation ---")
 
         try:
             final_interpretation_markdown = response_gemini.text
-            print("DEBUG: ✅ Final interpretation from Gemini received.") # Usando print
+            print("DEBUG: ✅ Final interpretation from Gemini received.")
             return final_interpretation_markdown, None
         except ValueError:
             error_msg = f"Gemini response (final interpretation) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
         except Exception as e_resp:
             error_msg = f"Unexpected error processing final Gemini response: {e_resp}"
-            print(f"ERROR: {error_msg}") # Usando print
+            print(f"ERROR: {error_msg}")
             return None, error_msg
 
     except Exception as e_gemini_call:
         error_msg = f"Error calling Gemini for final interpretation: {e_gemini_call}"
-        print(f"ERROR: {error_msg}") # Usando print
+        print(f"ERROR: {error_msg}")
         return None, error_msg
 
 
@@ -301,7 +302,6 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         """Handles CORS preflight requests"""
-        # *** ADDED PRINT STATEMENT ***
         print("DEBUG: Received OPTIONS request for path:", self.path)
         self.send_response(204) # No Content
         self._send_cors_headers()
@@ -309,57 +309,63 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handles POST requests to /analyze and /interpret_clinical"""
-        # *** ADDED PRINT STATEMENT AT THE VERY BEGINNING ***
-        print(f"DEBUG: Entering do_POST for path: {self.path}")
+        print(f"DEBUG: Entering do_POST for path: {self.path}") # Should always appear if handler is called
 
         parsed_path = urllib.parse.urlparse(self.path).path
         content_length = int(self.headers.get('Content-Length', 0))
         response_data = {}
-        status_code = 500 # Default to Internal Server Error
-        body_decoded = "" # Initialize to avoid reference before assignment error in except block
+        status_code = 500
+        body_decoded = ""
 
-        # *** ADDED PRINT STATEMENT FOR HEADERS ***
         print(f"DEBUG: Received Headers: \n{self.headers}")
 
         try:
-            # Read and parse the request body
             body = self.rfile.read(content_length)
             if not body:
-                 print("WARNING: Received empty request body.") # Usando print
+                 print("WARNING: Received empty request body.")
                  response_data = {'status': 'error', 'message': 'Request body is empty'}
                  status_code = 400
             else:
-                # Decode and parse JSON
                 body_decoded = body.decode('utf-8')
                 input_data = json.loads(body_decoded)
-                # *** REPLACED logging.info with print ***
-                print(f"DEBUG: Received POST request for path: {parsed_path}")
+                print(f"DEBUG: Received POST request for path: {parsed_path}") # Log actual path received
                 print(f"DEBUG: Request Body Content-Length: {content_length}")
                 print(f"DEBUG: Decoded Request Body: {body_decoded}")
                 print(f"DEBUG: Parsed Input Data: {input_data}")
 
                 # --- Route based on path ---
-                if parsed_path == '/api/analyze': # Check for /api/analyze
-                    print("DEBUG: --- Handling request for /api/analyze ---") # Usando print
+                # *** REVERTED PATH CHECK ***
+                if parsed_path == '/analyze':
+                    print("DEBUG: --- Handling request for /analyze ---")
                     gene = input_data.get('gene')
                     transcript = input_data.get('transcript')
                     cdna = input_data.get('cdna')
 
-                    # *** REPLACED logging.info with print ***
                     print(f"DEBUG: Extracted gene: {gene}")
-                    print(f"DEBUG: Extracted transcript: {transcript}")
-                    print(f"DEBUG: Extracted cdna: {cdna}")
+                    print(f"DEBUG: Extracted transcript: {transcript}") # Check this value in logs
+                    print(f"DEBUG: Extracted cdna: {cdna}") # Check this value in logs
 
                     # Validation
                     errors = []
                     if not gene: errors.append("Missing required field: 'gene'")
+                    # Check if transcript is None or empty string
                     if not transcript: errors.append("Missing required field: 'transcript'")
+                     # Check if cdna is None or empty string
                     if not cdna: errors.append("Missing required field: 'cdna'")
                     elif not cdna.startswith('c.'): errors.append("Invalid cDNA format (must start with 'c.')")
 
                     if errors:
-                        print(f"WARNING: Validation failed: {'; '.join(errors)}") # Usando print
-                        response_data = {'status': 'error', 'message': "; ".join(errors)}
+                        print(f"WARNING: Validation failed: {'; '.join(errors)}")
+                        # *** CORRECTED ERROR MESSAGE GENERATION ***
+                        # Use the specific error messages based on validation failures
+                        error_messages_map = {
+                            "Missing required field: 'gene'": "El campo 'Gen' es obligatorio.",
+                            "Missing required field: 'transcript'": "El campo 'Transcrito Ref.' es obligatorio.",
+                            "Missing required field: 'cdna'": "El campo 'Variante cDNA' es obligatorio.",
+                            "Invalid cDNA format (must start with 'c.')": "El formato de 'Variante cDNA' debe empezar con 'c.'"
+                        }
+                        final_error_message = "; ".join([error_messages_map.get(e, e) for e in errors])
+                        response_data = {'status': 'error', 'message': f"Errores de validación: {final_error_message}"}
                         status_code = 400
                     else:
                         # (Rest of the logic for /analyze remains the same)
@@ -386,10 +392,11 @@ class handler(BaseHTTPRequestHandler):
                             else:
                                 response_data = {'status': 'success', 'markdown_result': initial_markdown}
                                 status_code = 200
-                                print("DEBUG: --- /api/analyze processing completed successfully ---") # Usando print
+                                print("DEBUG: --- /analyze processing completed successfully ---")
 
-                elif parsed_path == '/api/interpret_clinical': # Check for /api/interpret_clinical
-                    print("DEBUG: --- Handling request for /api/interpret_clinical ---") # Usando print
+                # *** REVERTED PATH CHECK ***
+                elif parsed_path == '/interpret_clinical':
+                    print("DEBUG: --- Handling request for /interpret_clinical ---")
                     # (Add similar print statements inside this block if needed)
                     gene = input_data.get('gene')
                     transcript = input_data.get('transcript')
@@ -405,8 +412,17 @@ class handler(BaseHTTPRequestHandler):
                     if not clinical_info: errors.append("Missing required field: 'clinical_info'")
 
                     if errors:
-                        print(f"WARNING: Validation failed for /api/interpret_clinical: {'; '.join(errors)}") # Usando print
-                        response_data = {'status': 'error', 'message': "; ".join(errors)}
+                        print(f"WARNING: Validation failed for /interpret_clinical: {'; '.join(errors)}")
+                        # Generate user-friendly error message
+                        error_messages_map = {
+                            "Missing required field: 'gene'": "Falta el campo 'Gen'.",
+                            "Missing required field: 'transcript'": "Falta el campo 'Transcrito Ref.'.",
+                            "Missing required field: 'cdna'": "Falta el campo 'Variante cDNA'.",
+                            "Missing required field: 'initial_markdown'": "Falta el resultado del análisis inicial.",
+                            "Missing required field: 'clinical_info'": "Falta la información clínica."
+                        }
+                        final_error_message = "; ".join([error_messages_map.get(e, e) for e in errors])
+                        response_data = {'status': 'error', 'message': f"Errores de validación: {final_error_message}"}
                         status_code = 400
                     else:
                         # (Rest of the logic for /interpret_clinical remains the same)
@@ -421,34 +437,30 @@ class handler(BaseHTTPRequestHandler):
                         else:
                             response_data = {'status': 'success', 'final_interpretation': final_interpretation}
                             status_code = 200
-                            print("DEBUG: --- /api/interpret_clinical processing completed successfully ---") # Usando print
+                            print("DEBUG: --- /interpret_clinical processing completed successfully ---")
 
                 else:
                     # Handle unknown paths
-                    print(f"WARNING: Endpoint not found: {parsed_path}") # Usando print
+                    print(f"WARNING: Endpoint not found for parsed path: {parsed_path}")
                     response_data = {'status': 'error', 'message': f'Endpoint not found: {parsed_path}'}
                     status_code = 404
 
         except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON received: {e}") # Usando print
-            print(f"ERROR: Failed Body: {body_decoded}") # Usando print
+            print(f"ERROR: Invalid JSON received: {e}")
+            print(f"ERROR: Failed Body: {body_decoded}")
             response_data = {'status': 'error', 'message': 'Invalid JSON format in request body'}
             status_code = 400
         except Exception as e:
-            # Catch-all for unexpected errors
-            # Use print for the exception as well, including traceback might be useful
-            import traceback
-            print(f"ERROR: Unhandled Exception in POST handler for path {parsed_path}:") # Usando print
-            traceback.print_exc() # Print traceback to logs
+            print(f"ERROR: Unhandled Exception in POST handler for path {parsed_path}:")
+            traceback.print_exc() # Print full traceback
             response_data = {'status': 'error', 'message': 'An internal server error occurred.'}
             status_code = 500
 
         # --- Send Response ---
-        print(f"DEBUG: Sending response - Status: {status_code}, Data: {json.dumps(response_data)}") # Usando print
+        print(f"DEBUG: Sending response - Status: {status_code}, Data Keys: {list(response_data.keys())}") # Log keys only for brevity
         self.send_response(status_code)
         self.send_header('Content-type', 'application/json')
         self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(response_data).encode('utf-8'))
 
-# Note: No `if __name__ == '__main__':` block is needed for Vercel deployment.
