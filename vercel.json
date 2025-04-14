@@ -16,9 +16,4 @@
       "dest": "/index.html"
     }
   ]
-  "functions": {
-    "api/app.py": {
-      "maxDuration": 60
-    }
-}
 }
