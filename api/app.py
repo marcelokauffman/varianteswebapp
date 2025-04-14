@@ -6,129 +6,102 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from io import BytesIO
 import google.generativeai as genai
-import logging # Importar logging
-
-# Configurar logging básico
-logging.basicConfig(level=logging.INFO)
-
+# No se necesita importar logging si solo usamos print
 
 # --- Configuración de Gemini ---
-# (Sin cambios aquí... )
 gemini_configured = False
 model = None
-TARGET_GEMINI_MODEL = 'gemini-1.5-pro-latest' # Using the model from the Flask example
+TARGET_GEMINI_MODEL = 'gemini-2.5-pro-exp-03-25'
 
 try:
-    # GOOGLE_API_KEY should be set as an environment variable in Vercel
     GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
     if GOOGLE_API_KEY:
         genai.configure(api_key=GOOGLE_API_KEY)
-        logging.info(f"Initializing Gemini model: {TARGET_GEMINI_MODEL}...")
-        # Add safety settings if needed, e.g.,
-        # safety_settings = [
-        #     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        #     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        #     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        #     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        # ]
-        model = genai.GenerativeModel(
-            TARGET_GEMINI_MODEL,
-            # safety_settings=safety_settings # Uncomment to apply safety settings
-        )
+        print(f"INFO: Initializing Gemini model: {TARGET_GEMINI_MODEL}...") # Usando print
+        model = genai.GenerativeModel(TARGET_GEMINI_MODEL)
         gemini_configured = True
-        logging.info("Gemini model initialized.")
+        print("INFO: Gemini model initialized.") # Usando print
     else:
-        logging.warning("\nWARNING: Environment variable 'GOOGLE_API_KEY' NOT found.")
-        logging.warning("Gemini analysis will not work.")
+        print("WARNING: Environment variable 'GOOGLE_API_KEY' NOT found.") # Usando print
+        print("WARNING: Gemini analysis will not work.") # Usando print
 except Exception as e:
-    logging.error(f"\nAn error occurred configuring Gemini: {e}")
-    gemini_configured = False # Ensure it's marked as not configured
-
+    print(f"ERROR: An error occurred configuring Gemini: {e}") # Usando print
+    gemini_configured = False
 
 # --- Funciones de Lógica (Helper Functions) ---
 # (Sin cambios aquí... call_ensembl_vep, run_initial_gemini_analysis, run_final_gemini_interpretation)
+# (Sería bueno añadir prints dentro de estas también si el problema persiste)
 def call_ensembl_vep(query_identifier):
     """Calls the Ensembl VEP API and returns data or an error message."""
-    logging.info(f"--- 1. Querying Ensembl VEP for: {query_identifier} ---")
+    print(f"DEBUG: --- 1. Querying Ensembl VEP for: {query_identifier} ---") # Usando print
     server_vep = "https://rest.ensembl.org"
-    # Ensure the query identifier is properly URL-encoded
     encoded_query = urllib.parse.quote(query_identifier)
     ext_vep_base = f"/vep/human/hgvs/{encoded_query}"
-
-    # Define VEP parameters (same as Flask app)
     dbnsfp_fields_extended = [
         "gnomAD_exomes_AF", "gnomAD_genomes_AF", "SIFT_pred", "Polyphen2_HDIV_pred",
         "MutationTaster_pred", "FATHMM_pred", "MetaSVM_pred", "M-CAP_pred",
         "PrimateAI_pred", "BayesDel_addAF_pred", "GERP++_RS", "clinvar_clnsig",
-        "RVIS_EVS", "gnomAD_exomes_pLI", "gnomad_genomes_pLI" # Corrected typo gnomad_ -> gnomAD_
+        "RVIS_EVS", "gnomAD_exomes_pLI", "gnomad_genomes_pLI"
     ]
     dbnsfp_param = f"dbNSFP={','.join(dbnsfp_fields_extended)}"
     optional_params_extended = [
         "hgvs=1", "protein=1", "uniprot=1", "canonical=1", "domains=1", "numbers=1",
-        "variant_class=1", "Conservation=1", "LoF=1", "dbscSNV=1", "SpliceAI=1", # Using SpliceAI=1 as per Flask app
+        "variant_class=1", "Conservation=1", "LoF=1", "dbscSNV=1", "SpliceAI=1",
         "REVEL=1", "CADD=1", "ClinPred=1", "Mastermind=1", "DisGeNET=1",
         "Phenotypes=1", "LOEUF=1", "EVE=1", "AlphaMissense=1",
         dbnsfp_param, "mane=1", "clinvar_summary=1"
     ]
     params_string = "&".join(optional_params_extended)
     full_url = f"{server_vep}{ext_vep_base}?{params_string}"
-    vep_timeout = 300 # 5 minutes timeout
+    vep_timeout = 300
 
     try:
-        logging.info(f"Making GET request to Ensembl VEP (timeout={vep_timeout}s)... URL: {full_url}")
+        print(f"DEBUG: Making GET request to Ensembl VEP (timeout={vep_timeout}s)... URL: {full_url}") # Usando print
         response = requests.get(full_url, headers={"Content-Type": "application/json", "Accept": "application/json"}, timeout=vep_timeout)
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status()
         data = response.json()
-
-        # Process VEP response data
         if data and isinstance(data, list) and len(data) > 0:
             if len(data) > 1:
-                logging.warning(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.")
-            logging.info("✅ Ensembl VEP response received successfully.")
-            return data[0], None # Return the first result and no error
+                print(f"WARN: Ensembl VEP returned {len(data)} results. Using the first one.") # Usando print
+            print("DEBUG: ✅ Ensembl VEP response received successfully.") # Usando print
+            return data[0], None
         elif data and isinstance(data, list) and len(data) == 0:
             error_msg = f"Ensembl VEP found no results (empty list) for '{query_identifier}'."
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
         else:
-            # Handle cases where VEP might return non-list data or unexpected format
             error_msg = f"Unexpected response format from Ensembl VEP: {str(data)[:300]}..."
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
-
     except requests.exceptions.Timeout:
         error_msg = f"The request to Ensembl VEP timed out after {vep_timeout} seconds."
-        logging.error(f"❌ Error: {error_msg}")
+        print(f"ERROR: {error_msg}") # Usando print
         return None, error_msg
     except requests.exceptions.RequestException as e:
         error_msg = f"Error during Ensembl VEP request: {e}"
-        logging.error(f"❌ Error: {error_msg}")
+        print(f"ERROR: {error_msg}") # Usando print
         error_detail = ""
-        status_code = 502 # Bad Gateway default for upstream errors
+        status_code = 502
         if hasattr(e, 'response') and e.response is not None:
             status_code = e.response.status_code
-            try:
-                error_detail = json.dumps(e.response.json(), indent=2)
-            except json.JSONDecodeError:
-                error_detail = e.response.text
-            logging.error(f"Detail (Status {status_code}): {error_detail[:500]}")
-        # Return a combined error message
+            try: error_detail = json.dumps(e.response.json(), indent=2)
+            except json.JSONDecodeError: error_detail = e.response.text
+            print(f"ERROR Detail (Status {status_code}): {error_detail[:500]}") # Usando print
         return None, f"{error_msg} (Status: {status_code}, Detail: {error_detail[:100]}...)"
     except Exception as e_general:
-        # Catch any other unexpected errors during VEP processing
         error_msg = f"Unexpected error processing Ensembl VEP response: {e_general}"
-        logging.error(f"❌ Error: {error_msg}")
+        print(f"ERROR: {error_msg}") # Usando print
         return None, error_msg
 
 def run_initial_gemini_analysis(query_identifier, decoded_vep):
     """Performs the first Gemini call for quantitative classification."""
     global model, gemini_configured, TARGET_GEMINI_MODEL
     if not gemini_configured or not model:
+        print("ERROR: Cannot run Gemini analysis, model not configured.") # Usando print
         return None, "Gemini model is not configured on the backend."
 
-    logging.info(f"\n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
+    print(f"DEBUG: \n--- 2. Performing Initial Quantitative ACMG Analysis with Gemini ({TARGET_GEMINI_MODEL}, T=0.1) --- ") # Usando print
     try:
-        # Using the detailed prompt from the Flask app
         prompt_vep_quant_acmg_freq_assume = f"""
 ## ROLE AND GOAL
 You are 'Variant Analyst AI', an expert system specialized in classifying human genetic sequence variants (SNVs and small indels) associated with Mendelian disorders. Your primary goal is to provide accurate, evidence-based classifications strictly following the quantitative point-based interpretation framework derived from the ACMG/AMP guidelines and subsequent ClinGen refinements.[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] You will receive variant annotation data from `VEP` and possibly minimal clinical context (if available). You must adhere to established best practices for variant interpretation, ensuring consistency, rigor, and transparency. **Your analysis MUST be based *solely* on the provided VEP JSON data, with one specific exception regarding missing frequency data as detailed below.**
@@ -208,51 +181,47 @@ Provide a structured response containing:
 
 **IMPORTANTE:** Por favor, genera la respuesta final completa exclusivamente en **español**.
 """
-        gemini_timeout = 480 # Increased timeout for potentially complex analysis
-        generation_config = genai.types.GenerationConfig(temperature=0.1) # Low temperature for consistency
+        gemini_timeout = 480
+        generation_config = genai.types.GenerationConfig(temperature=0.1)
 
-        logging.info(f"Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...")
+        print(f"DEBUG: Sending initial analysis request to Gemini (timeout={gemini_timeout}s)...") # Usando print
         response_gemini = model.generate_content(
             prompt_vep_quant_acmg_freq_assume,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        logging.info("\n--- Results from Initial Gemini Analysis ---")
+        print("DEBUG: --- Results from Initial Gemini Analysis ---") # Usando print
 
-        # Process Gemini response safely
         try:
-            # Access the text part of the response
             analysis_output_markdown = response_gemini.text
-            logging.info("✅ Initial analysis from Gemini received.")
-            return analysis_output_markdown, None # Return result and no error
+            print("DEBUG: ✅ Initial analysis from Gemini received.") # Usando print
+            return analysis_output_markdown, None
         except ValueError:
-            # Handle cases where the response might be blocked due to safety settings
             error_msg = f"Gemini response (initial) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
         except Exception as e_resp:
-            # Handle other potential errors accessing response parts
             error_msg = f"Unexpected error processing initial Gemini response: {e_resp}"
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
 
     except Exception as e_gemini_call:
-        # Handle errors during the API call itself (e.g., network issues, timeout)
         error_msg = f"Error calling Gemini for initial analysis: {e_gemini_call}"
-        logging.error(f"❌ Error: {error_msg}")
+        print(f"ERROR: {error_msg}") # Usando print
         return None, error_msg
 
 def run_final_gemini_interpretation(query_identifier, gene_name, initial_analysis_markdown, clinical_info):
     """Performs the second Gemini call integrating clinical data."""
     global model, gemini_configured, TARGET_GEMINI_MODEL
     if not gemini_configured or not model:
+        print("ERROR: Cannot run Gemini interpretation, model not configured.") # Usando print
         return None, "Gemini model is not configured on the backend."
     if not initial_analysis_markdown:
+        print("ERROR: Missing initial analysis result for final interpretation.") # Usando print
         return None, "Missing initial analysis result for final interpretation."
 
-    logging.info(f"\n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ")
+    print(f"DEBUG: \n--- 3. Performing Final Interpretation with Clinical Data ({TARGET_GEMINI_MODEL}, T=0.1) --- ") # Usando print
     try:
-        # Prompt for the final interpretation (same as Flask app)
         prompt_final_interpretation = f"""
 ## ROLE AND GOAL
 You are 'Variant Interpretation AI', an expert system assisting clinical geneticists. Your goal is to integrate a **pre-computed variant classification** (based on ACMG quantitative points derived from VEP data) with **patient-specific clinical information** to provide a final interpretation regarding the variant's potential causal role in the patient's phenotype.
@@ -290,35 +259,35 @@ Based **only** on the information provided above (initial classification report 
 
 **IMPORTANTE:** Por favor, genera la respuesta final completa exclusivamente en **español**.
 """
-        gemini_timeout = 300 # Standard timeout for final interpretation
+        gemini_timeout = 300
         generation_config = genai.types.GenerationConfig(temperature=0.1)
 
-        logging.info(f"Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...")
+        print(f"DEBUG: Sending final interpretation request to Gemini (timeout={gemini_timeout}s)...") # Usando print
         response_gemini = model.generate_content(
             prompt_final_interpretation,
             generation_config=generation_config,
             request_options={'timeout': gemini_timeout}
         )
-        logging.info("\n--- Results from Final Gemini Interpretation ---")
+        print("DEBUG: --- Results from Final Gemini Interpretation ---") # Usando print
 
-        # Process Gemini response safely
         try:
             final_interpretation_markdown = response_gemini.text
-            logging.info("✅ Final interpretation from Gemini received.")
+            print("DEBUG: ✅ Final interpretation from Gemini received.") # Usando print
             return final_interpretation_markdown, None
         except ValueError:
             error_msg = f"Gemini response (final interpretation) was blocked. Feedback: {response_gemini.prompt_feedback}"
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
         except Exception as e_resp:
             error_msg = f"Unexpected error processing final Gemini response: {e_resp}"
-            logging.error(f"❌ Error: {error_msg}")
+            print(f"ERROR: {error_msg}") # Usando print
             return None, error_msg
 
     except Exception as e_gemini_call:
         error_msg = f"Error calling Gemini for final interpretation: {e_gemini_call}"
-        logging.error(f"❌ Error: {error_msg}")
+        print(f"ERROR: {error_msg}") # Usando print
         return None, error_msg
+
 
 # --- Vercel Serverless Handler Class ---
 
@@ -332,45 +301,54 @@ class handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         """Handles CORS preflight requests"""
+        # *** ADDED PRINT STATEMENT ***
+        print("DEBUG: Received OPTIONS request for path:", self.path)
         self.send_response(204) # No Content
         self._send_cors_headers()
         self.end_headers()
 
     def do_POST(self):
         """Handles POST requests to /analyze and /interpret_clinical"""
+        # *** ADDED PRINT STATEMENT AT THE VERY BEGINNING ***
+        print(f"DEBUG: Entering do_POST for path: {self.path}")
+
         parsed_path = urllib.parse.urlparse(self.path).path
         content_length = int(self.headers.get('Content-Length', 0))
         response_data = {}
         status_code = 500 # Default to Internal Server Error
+        body_decoded = "" # Initialize to avoid reference before assignment error in except block
+
+        # *** ADDED PRINT STATEMENT FOR HEADERS ***
+        print(f"DEBUG: Received Headers: \n{self.headers}")
 
         try:
             # Read and parse the request body
             body = self.rfile.read(content_length)
             if not body:
-                 logging.warning("Received empty request body.") # Log empty body
+                 print("WARNING: Received empty request body.") # Usando print
                  response_data = {'status': 'error', 'message': 'Request body is empty'}
                  status_code = 400
             else:
                 # Decode and parse JSON
                 body_decoded = body.decode('utf-8')
                 input_data = json.loads(body_decoded)
-                # *** ADDED LOGGING HERE ***
-                logging.info(f"Received POST request for path: {parsed_path}")
-                logging.info(f"Request Body Content-Length: {content_length}")
-                logging.info(f"Decoded Request Body: {body_decoded}") # Log the raw decoded body
-                logging.info(f"Parsed Input Data: {input_data}") # Log the parsed dictionary
+                # *** REPLACED logging.info with print ***
+                print(f"DEBUG: Received POST request for path: {parsed_path}")
+                print(f"DEBUG: Request Body Content-Length: {content_length}")
+                print(f"DEBUG: Decoded Request Body: {body_decoded}")
+                print(f"DEBUG: Parsed Input Data: {input_data}")
 
                 # --- Route based on path ---
-                if parsed_path == '/analyze':
-                    logging.info("\n--- Handling request for /analyze ---")
+                if parsed_path == '/api/analyze': # Check for /api/analyze
+                    print("DEBUG: --- Handling request for /api/analyze ---") # Usando print
                     gene = input_data.get('gene')
-                    transcript = input_data.get('transcript') # Extract data
-                    cdna = input_data.get('cdna')             # Extract data
+                    transcript = input_data.get('transcript')
+                    cdna = input_data.get('cdna')
 
-                    # *** ADDED LOGGING FOR EXTRACTED VALUES ***
-                    logging.info(f"Extracted gene: {gene}")
-                    logging.info(f"Extracted transcript: {transcript}")
-                    logging.info(f"Extracted cdna: {cdna}")
+                    # *** REPLACED logging.info with print ***
+                    print(f"DEBUG: Extracted gene: {gene}")
+                    print(f"DEBUG: Extracted transcript: {transcript}")
+                    print(f"DEBUG: Extracted cdna: {cdna}")
 
                     # Validation
                     errors = []
@@ -380,14 +358,12 @@ class handler(BaseHTTPRequestHandler):
                     elif not cdna.startswith('c.'): errors.append("Invalid cDNA format (must start with 'c.')")
 
                     if errors:
-                        # Log validation errors before sending response
-                        logging.warning(f"Validation failed: {'; '.join(errors)}")
+                        print(f"WARNING: Validation failed: {'; '.join(errors)}") # Usando print
                         response_data = {'status': 'error', 'message': "; ".join(errors)}
                         status_code = 400
                     else:
+                        # (Rest of the logic for /analyze remains the same)
                         query_identifier = f"{transcript}:{cdna}"
-
-                        # 1. Call VEP
                         vep_data, vep_error = call_ensembl_vep(query_identifier)
                         if vep_error:
                             response_data = {'status': 'error', 'message': f"VEP Error: {vep_error}"}
@@ -400,7 +376,6 @@ class handler(BaseHTTPRequestHandler):
                              response_data = {'status': 'error', 'message': 'No valid data received from VEP.'}
                              status_code = 404
                         else:
-                            # 2. Call Gemini (Initial Analysis)
                             initial_markdown, gemini_error = run_initial_gemini_analysis(query_identifier, vep_data)
                             if gemini_error:
                                 response_data = {'status': 'error', 'message': f"Gemini Initial Analysis Error: {gemini_error}"}
@@ -409,21 +384,19 @@ class handler(BaseHTTPRequestHandler):
                                 response_data = {'status': 'error', 'message': 'Gemini initial analysis did not produce results.'}
                                 status_code = 500
                             else:
-                                # Success for /analyze
                                 response_data = {'status': 'success', 'markdown_result': initial_markdown}
                                 status_code = 200
-                                logging.info("--- /analyze processing completed successfully ---")
+                                print("DEBUG: --- /api/analyze processing completed successfully ---") # Usando print
 
-                elif parsed_path == '/interpret_clinical':
-                    logging.info("\n--- Handling request for /interpret_clinical ---")
-                    # (Add similar logging inside this block if needed)
+                elif parsed_path == '/api/interpret_clinical': # Check for /api/interpret_clinical
+                    print("DEBUG: --- Handling request for /api/interpret_clinical ---") # Usando print
+                    # (Add similar print statements inside this block if needed)
                     gene = input_data.get('gene')
                     transcript = input_data.get('transcript')
                     cdna = input_data.get('cdna')
                     initial_markdown = input_data.get('initial_markdown')
                     clinical_info = input_data.get('clinical_info')
 
-                    # Validation
                     errors = []
                     if not gene: errors.append("Missing required field: 'gene'")
                     if not transcript: errors.append("Missing required field: 'transcript'")
@@ -432,14 +405,13 @@ class handler(BaseHTTPRequestHandler):
                     if not clinical_info: errors.append("Missing required field: 'clinical_info'")
 
                     if errors:
-                        logging.warning(f"Validation failed for /interpret_clinical: {'; '.join(errors)}")
+                        print(f"WARNING: Validation failed for /api/interpret_clinical: {'; '.join(errors)}") # Usando print
                         response_data = {'status': 'error', 'message': "; ".join(errors)}
                         status_code = 400
                     else:
+                        # (Rest of the logic for /interpret_clinical remains the same)
                         query_identifier = f"{transcript}:{cdna}"
-                        # Call Gemini (Final Interpretation)
                         final_interpretation, gemini_error = run_final_gemini_interpretation(query_identifier, gene, initial_markdown, clinical_info)
-
                         if gemini_error:
                             response_data = {'status': 'error', 'message': f"Gemini Final Interpretation Error: {gemini_error}"}
                             status_code = 500
@@ -447,32 +419,35 @@ class handler(BaseHTTPRequestHandler):
                             response_data = {'status': 'error', 'message': 'Gemini final interpretation did not produce results.'}
                             status_code = 500
                         else:
-                            # Success for /interpret_clinical
                             response_data = {'status': 'success', 'final_interpretation': final_interpretation}
                             status_code = 200
-                            logging.info("--- /interpret_clinical processing completed successfully ---")
+                            print("DEBUG: --- /api/interpret_clinical processing completed successfully ---") # Usando print
 
                 else:
                     # Handle unknown paths
-                    logging.warning(f"Endpoint not found: {parsed_path}")
+                    print(f"WARNING: Endpoint not found: {parsed_path}") # Usando print
                     response_data = {'status': 'error', 'message': f'Endpoint not found: {parsed_path}'}
                     status_code = 404
 
         except json.JSONDecodeError as e:
-            logging.error(f"Invalid JSON received: {e}")
-            logging.error(f"Failed Body: {body_decoded if 'body_decoded' in locals() else 'Could not decode body'}") # Log body that failed
+            print(f"ERROR: Invalid JSON received: {e}") # Usando print
+            print(f"ERROR: Failed Body: {body_decoded}") # Usando print
             response_data = {'status': 'error', 'message': 'Invalid JSON format in request body'}
             status_code = 400
         except Exception as e:
-            # Catch-all for unexpected errors during request processing
-            logging.exception(f"Unhandled Exception in POST handler for path {parsed_path}: {e}") # Use logging.exception to include traceback
+            # Catch-all for unexpected errors
+            # Use print for the exception as well, including traceback might be useful
+            import traceback
+            print(f"ERROR: Unhandled Exception in POST handler for path {parsed_path}:") # Usando print
+            traceback.print_exc() # Print traceback to logs
             response_data = {'status': 'error', 'message': 'An internal server error occurred.'}
             status_code = 500
 
         # --- Send Response ---
+        print(f"DEBUG: Sending response - Status: {status_code}, Data: {json.dumps(response_data)}") # Usando print
         self.send_response(status_code)
         self.send_header('Content-type', 'application/json')
-        self._send_cors_headers() # Send CORS headers for POST response as well
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(response_data).encode('utf-8'))
 
